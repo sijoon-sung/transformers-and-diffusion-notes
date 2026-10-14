@@ -50,20 +50,3 @@ Spring 2026 슬라이드 기준.
 본문의 작은 숫자와 가상 상황은 개념을 풀어보기 위한 예제.
 직접 모델을 학습하거나 성능을 측정한 실험 결과와는 구분.
 
-## 슬라이드 캡처
-
-이미지는 원본 강의 PDF에서 캡처. 슬라이드의 저자·출처 표기를 유지하고 필기는 본문에 추가.
-[캡처 출처 및 페이지](assets/SOURCES.md)에 정리.
-
-Python과 pypdfium2가 있는 환경에서 다시 캡처 가능.
-
-```shell
-python tools/extract_ch01_slides.py "fall26-cme295-lecture1.pdf 경로"
-python tools/extract_course_slides.py "스탠포드 강의 폴더 경로"
-```
-
-## 웹 페이지
-
-메인은 `index.html`, 노트의 웹 버전은 `site/`에 있음.
-Markdown을 수정한 뒤 `npm install`, `npm run build`로 웹 버전을 갱신.
-`index.html`, `site/`, `assets/`의 상대 경로를 사용해서 GitHub Pages에서도 같은 구조로 열 수 있음.
