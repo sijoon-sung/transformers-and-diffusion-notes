@@ -1,0 +1,140 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Attention에서 Q K V가 하는 일</title><style>*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f5f5f3;color:#24292f;font:16px/1.85 'Malgun Gothic',sans-serif}article{max-width:960px;margin:32px auto;padding:42px 52px;background:white;border:1px solid #dce1e5;border-radius:8px;overflow-wrap:anywhere}h1{font-size:29px;line-height:1.5;letter-spacing:-.8px}h2{font-size:23px;margin-top:52px;padding-top:20px;border-top:1px solid #d8dee4;scroll-margin-top:22px}h3{font-size:20px;margin-top:30px}p{margin:16px 0}a{color:#15569a;text-underline-offset:3px}img{display:block;max-width:100%;height:auto;border:1px solid #ddd;margin-top:24px}code{font:14px/1.7 Consolas,'Malgun Gothic',monospace;background:#f0f2f4;padding:2px 4px;border-radius:4px}pre{padding:18px;background:#f4f6f8;border-radius:6px;overflow-x:auto;overflow-wrap:normal}pre code{padding:0;background:none}table{border-collapse:collapse;width:100%;font-size:15px}td,th{border:1px solid #d5dae0;padding:9px 12px;text-align:left}th{background:#f4f6f8}.table-wrap{overflow-x:auto;margin:20px 0}li{margin:6px 0}.equation{font:22px/1.6 Cambria,serif;text-align:center;padding:22px;background:#f4f6f8;overflow-x:auto}details{background:#f4f6f8;padding:10px 18px;border-radius:6px;margin:22px 0}summary{cursor:pointer}nav a{display:block;padding:3px 0;text-decoration:none}.top{font-size:13px;color:#63717b}.top a{margin-right:14px}footer{margin-top:50px;padding-top:16px;border-top:1px solid #ddd;font-size:14px}@media(max-width:700px){article{margin:0;padding:24px 18px;border:0;border-radius:0}body{font-size:15px}h1{font-size:25px}h2{font-size:21px}td,th{padding:7px}table{font-size:13px}.equation{font-size:18px;padding:14px}}</style></head><body><article><div class="top"><a href="../index.html">전체 목차</a>CME 295</div><details><summary>이 노트의 목차</summary><nav><a href="#part-1">문장 하나로 보면</a><a href="#part-2">숫자를 넣어보면</a><a href="#part-3">그럼 K와 V는 왜 따로 두는지</a><a href="#part-4">같은 입력인데 Q와 K가 달라지는 이유</a></nav></details><h1>Attention에서 Q K V가 하는 일</h1>
+<p><a href="notes--01-transformer-basics.html">1단원 전체 정리로 돌아가기</a></p>
+<p>Attention은 Query, Key, Value를 가지고 계산.
+여기서는 Transformer의 scaled dot-product attention 기준.</p>
+<ul>
+<li>Q와 K → 어디를 얼마나 참고할지 계산</li>
+<li>V → 그 비율만큼 가져와서 섞을 정보</li>
+</ul>
+<h2 id="part-1">문장 하나로 보면</h2>
+<p><code>민수는 사과를 먹었다</code></p>
+<p>설명을 위해 <code>민수는 / 사과를 / 먹었다</code>를 각각 한 토큰으로 가정.
+실제 토크나이저에서는 더 잘게 나뉠 수 있음.</p>
+<p>지금은 <code>먹었다</code> 위치에서 다른 토큰을 참고하는 상황.
+“무엇을 먹었는지 찾는다”는 비유로 생각해보기.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>구분</th>
+<th>역할</th>
+<th>문장에서 생각해볼 예시</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Query</td>
+<td>현재 위치에서 찾는 정보</td>
+<td><code>먹었다</code> 쪽에서 “무엇을 먹었지?”</td>
+</tr>
+<tr>
+<td>Key</td>
+<td>Query와 비교할 특징</td>
+<td><code>사과를</code> 쪽에서 비교에 사용할 특징</td>
+</tr>
+<tr>
+<td>Value</td>
+<td>실제로 가져올 정보</td>
+<td><code>사과를</code> 쪽에서 출력에 보탤 정보</td>
+</tr>
+</tbody></table></div>
+<p>Q가 실제로 한국어 질문을 담고 있는 건 아님. Q, K, V 모두 숫자 벡터.
+‘음식’, ‘사람’ 같은 이름을 각 차원에 미리 붙여두는 것도 아님.</p>
+<p>그리고 <code>먹었다</code>만 Q를 갖는 건 아님.
+Self-attention에서는 <code>민수는</code>, <code>사과를</code>, <code>먹었다</code> 각각에서 Q, K, V를 만듦.
+지금은 그중 <code>먹었다</code>의 Q 하나만 꺼내 보는 것.</p>
+<p><img src="../assets/ch01/slide-061-qkv.png" alt="CME 295 Lecture 1 원본 p61 한 위치의 Query와 각 위치의 Key 및 Value"></p>
+<h2 id="part-2">숫자를 넣어보면</h2>
+<p>작게 2차원 벡터로 계산. 아래 숫자는 설명용으로 정한 값.
+학습된 모델에서 뽑은 값은 아님.</p>
+<p><code>q_먹었다 = [1, 0]</code></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>참고할 토큰</th>
+<th>K</th>
+<th>V</th>
+<th>q와 K의 내적</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>민수는</td>
+<td>[0, 1]</td>
+<td>[1, 0]</td>
+<td>0</td>
+</tr>
+<tr>
+<td>사과를</td>
+<td>[2, 0]</td>
+<td>[0, 2]</td>
+<td>2</td>
+</tr>
+<tr>
+<td>먹었다</td>
+<td>[1, 1]</td>
+<td>[1, 1]</td>
+<td>1</td>
+</tr>
+</tbody></table></div>
+<p>예를 들어 <code>사과를</code>의 점수는 <code>1 × 2 + 0 × 0 = 2</code>.
+이 설정에서는 <code>사과를</code> 쪽 점수가 가장 큼.</p>
+<p>그다음 Q와 K의 차원 수인 <code>d_k = 2</code>를 사용.</p>
+<pre><code class="language-text">내적 점수             [0, 2, 1]
+sqrt(2)로 나눈 점수   [0, 1.4142, 0.7071]
+softmax 가중치        [0.1400, 0.5760, 0.2840]
+</code></pre>
+<p>Softmax는 각 점수에 exp를 적용한 뒤 전체 합으로 나누는 계산.
+예를 들어 <code>사과를</code>의 가중치는 아래처럼 나옴.</p>
+<pre><code class="language-text">exp(1.4142) / (exp(0) + exp(1.4142) + exp(0.7071)) ≈ 0.5760
+</code></pre>
+<p>가중치 합은 1. 이제 이 비율로 V를 섞음.</p>
+<p><img src="../assets/ch01/slide-062-attention.png" alt="CME 295 Lecture 1 원본 p62 attention 수식과 연산 순서"></p>
+<pre><code class="language-text">출력 ≈ 0.1400 × [1, 0]
+     + 0.5760 × [0, 2]
+     + 0.2840 × [1, 1]
+
+     = [0.4240, 1.4360]
+</code></pre>
+<p><code>사과를</code>만 골라서 가져오는 게 아니라, 세 V를 서로 다른 비율로 섞은 결과.
+이 벡터가 <code>먹었다</code> 위치의 attention 출력.
+아직 다음 단어의 확률은 아님.</p>
+<p>여기까지를 여러 Q에 대해 한 번에 쓰면 아래 식.</p>
+<div class="equation">Attention(Q, K, V) = softmax(QK<sup>T</sup> / √d<sub>k</sub>)V</div>
+
+<p>각 Q에 대해 K들을 비교하고, 행마다 softmax를 적용.
+계산 순서는 <a href="https://arxiv.org/html/1706.03762v7#S3.SS2.SSS1">Attention Is All You Need의 3.2.1절</a> 참고.</p>
+<p>왜 <code>sqrt(d_k)</code>로 나눌까?</p>
+<p>Q와 K의 성분이 서로 독립이고 각각 평균 0, 분산 1이라고 놓으면 내적의 분산은 <code>d_k</code>.
+표준편차가 <code>sqrt(d_k)</code>이므로 그만큼 나눠 점수의 크기를 조절.
+점수가 너무 커져 softmax가 한쪽으로 몰리는 것을 줄이려는 것.</p>
+<h2 id="part-3">그럼 K와 V는 왜 따로 두는지</h2>
+<p>검색할 때 책 제목을 보고 고르지만, 실제로 읽는 건 책 내용.
+비교에 쓰는 특징과 가져오는 내용을 따로 만들 수 있게 한 구조로 이해.</p>
+<p>위 예시에서 <code>사과를</code>의 K는 <code>[2, 0]</code>, V는 <code>[0, 2]</code>.
+점수 계산에는 앞의 값, 마지막 가중합에는 뒤의 값을 사용.</p>
+<p>그럼 Q와 K는 그대로 두고 V만 바꾸면?</p>
+<p>→ 가중치는 그대로. 출력에 섞이는 내용만 달라짐.</p>
+<p>예를 들어 <code>사과를</code>의 V만 <code>[0, 4]</code>로 바꾸면 출력은 약 <code>[0.4240, 2.5879]</code>.
+<code>사과를</code>의 가중치 0.5760은 그대로인데 두 번째 출력값이 커짐.</p>
+<p>반대로 K만 바꾸면?</p>
+<p><code>사과를</code>의 K를 <code>[2, 0]</code>에서 <code>[0, 2]</code>로 바꾸면 q와의 내적이 2에서 0으로 바뀜.
+<code>사과를</code>의 가중치는 약 0.576에서 0.248로 줄어듦. V는 그대로인데 출력은 약 <code>[0.752, 1.000]</code>.
+이번에는 참고하는 비율이 바뀌어서 출력이 달라진 것.</p>
+<h2 id="part-4">같은 입력인데 Q와 K가 달라지는 이유</h2>
+<p>Self-attention에서는 같은 입력 X에 서로 다른 변환 행렬을 곱함.</p>
+<pre><code class="language-text">Q = XW_Q
+K = XW_K
+V = XW_V
+</code></pre>
+<p>X는 이 attention 층으로 들어오는 토큰 벡터들을 모은 것.
+W_Q, W_K, W_V는 학습되는 행렬.
+같은 <code>사과를</code> 벡터라도 어떤 행렬을 곱하느냐에 따라 결과가 달라짐.
+관련 구조는 <a href="https://arxiv.org/html/1706.03762v7#S3.SS2.SSS2">논문 3.2.2–3.2.3절</a> 참고.</p>
+<p>예를 들어 <code>[1, 2]</code>에 단위행렬을 곱하면 <code>[1, 2]</code> 그대로.
+두 성분을 바꾸는 행렬을 곱하면 <code>[2, 1]</code>.
+실제 학습되는 행렬은 훨씬 복잡하지만, 같은 입력이 다른 벡터로 바뀐다는 점은 같음.</p>
+<p>‘Self’는 자기 자신 한 토큰만 본다는 뜻이 아니라, Q와 K, V의 출발점이 같은 시퀀스라는 뜻.
+위 예시에서도 <code>먹었다</code>가 자기 자신뿐 아니라 앞의 두 토큰을 참고함.</p>
+<p>그럼 다음 토큰을 예측할 때도 <code>민수는</code> 위치가 뒤의 <code>사과를</code>을 봐도 될까?</p>
+<p><code>민수는</code> 다음에 올 <code>사과를</code>을 맞히는 상황이라면 정답을 미리 보는 셈.
+그래서 현재 위치보다 뒤쪽 점수를 가리는 causal mask가 필요.
+<a href="notes--01-transformer-basics.html#7-decoder%EC%97%90%EC%84%9C-%EB%AF%B8%EB%9E%98%EB%A5%BC-%EA%B0%80%EB%A6%AC%EB%8A%94-%EC%9D%B4%EC%9C%A0">1단원의 masking 부분</a>과 연결됨.</p>
+<footer><a href="../index.html">전체 목차로 돌아가기</a></footer></article></body></html>

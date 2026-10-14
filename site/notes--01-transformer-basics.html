@@ -1,0 +1,366 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>1단원 문장이 Transformer를 통과하는 과정</title><style>*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f5f5f3;color:#24292f;font:16px/1.85 'Malgun Gothic',sans-serif}article{max-width:960px;margin:32px auto;padding:42px 52px;background:white;border:1px solid #dce1e5;border-radius:8px;overflow-wrap:anywhere}h1{font-size:29px;line-height:1.5;letter-spacing:-.8px}h2{font-size:23px;margin-top:52px;padding-top:20px;border-top:1px solid #d8dee4;scroll-margin-top:22px}h3{font-size:20px;margin-top:30px}p{margin:16px 0}a{color:#15569a;text-underline-offset:3px}img{display:block;max-width:100%;height:auto;border:1px solid #ddd;margin-top:24px}code{font:14px/1.7 Consolas,'Malgun Gothic',monospace;background:#f0f2f4;padding:2px 4px;border-radius:4px}pre{padding:18px;background:#f4f6f8;border-radius:6px;overflow-x:auto;overflow-wrap:normal}pre code{padding:0;background:none}table{border-collapse:collapse;width:100%;font-size:15px}td,th{border:1px solid #d5dae0;padding:9px 12px;text-align:left}th{background:#f4f6f8}.table-wrap{overflow-x:auto;margin:20px 0}li{margin:6px 0}.equation{font:22px/1.6 Cambria,serif;text-align:center;padding:22px;background:#f4f6f8;overflow-x:auto}details{background:#f4f6f8;padding:10px 18px;border-radius:6px;margin:22px 0}summary{cursor:pointer}nav a{display:block;padding:3px 0;text-decoration:none}.top{font-size:13px;color:#63717b}.top a{margin-right:14px}footer{margin-top:50px;padding-top:16px;border-top:1px solid #ddd;font-size:14px}@media(max-width:700px){article{margin:0;padding:24px 18px;border:0;border-radius:0}body{font-size:15px}h1{font-size:25px}h2{font-size:21px}td,th{padding:7px}table{font-size:13px}.equation{font-size:18px;padding:14px}}</style></head><body><article><div class="top"><a href="../index.html">전체 목차</a>CME 295</div><details><summary>이 노트의 목차</summary><nav><a href="#part-1">1 문장을 토큰으로 나누기</a><a href="#part-2">2 ID에서 임베딩 벡터로</a><a href="#part-3">3 Word2vec과 RNN을 거쳐 Attention으로</a><a href="#part-4">4 Q K V로 참고할 정보 계산하기</a><a href="#part-5">5 위치 정보와 여러 개의 Head</a><a href="#part-6">6 Encoder와 Decoder를 연결하면</a><a href="#part-7">7 Decoder에서 미래를 가리는 이유</a><a href="#part-8">8 Attention 옆에 붙어 있는 것들</a><a href="#part-9">9 마지막 벡터가 어떻게 단어가 되는지</a><a href="#part-10">10 한 문장으로 다시 연결</a><a href="#part-11">참고자료</a></nav></details><h1>1단원 문장이 Transformer를 통과하는 과정</h1>
+<p>CME 295 Lecture 1 정리. 토큰화부터 다음 토큰 확률이 나오는 데까지.</p>
+<p>먼저 연결해둘 흐름은 이것.</p>
+<p><code>문장 → 토큰 → ID → 벡터 → 문맥을 반영한 벡터 → 다음 토큰 확률</code></p>
+<p>이름이 많지만 결국 중간에 무엇이 바뀌는지 따라가면 됨.
+예시는 주로 <code>민수는 사과를 먹었다</code> 사용. 본문의 작은 벡터와 확률은 설명용 값.</p>
+<h2 id="part-1">1 문장을 토큰으로 나누기</h2>
+<p>모델에 문장을 넣으려면 먼저 처리할 조각으로 나눠야 함. 그 조각이 <strong>토큰</strong>.
+토큰이 꼭 한 단어인 건 아님.</p>
+<p><img src="../assets/ch01/slide-024-tokenization.png" alt="CME 295 Lecture 1 원본 p24 문장과 토큰 및 어휘 사전"></p>
+<p><code>reading</code>을 예로 보면,</p>
+<ul>
+<li>단어 단위 → <code>reading</code> 하나. 읽기는 편한데 모르는 단어가 나오면?</li>
+<li>문자 단위 → <code>r / e / a / d / i / n / g</code>. 조각은 적은 종류로 만들 수 있지만 문장 길이가 길어짐.</li>
+<li>서브워드 단위 → 예를 들어 <code>read / ##ing</code>. 자주 나오는 조각을 묶어 쓰는 방식.</li>
+</ul>
+<p>위 분할은 개념 예시. 실제 분할과 <code>##</code> 같은 표시는 사용하는 토크나이저에 따라 다름.</p>
+<p><img src="../assets/ch01/slide-027-subword.png" alt="CME 295 Lecture 1 원본 p27 서브워드 토큰화 예시"></p>
+<p><strong>그럼 왜 그냥 띄어쓰기로 나누면 안 될까?</strong></p>
+<p><code>먹다 / 먹었다 / 먹었지만</code>을 전부 다른 단어로 넣으면 사전이 계속 커짐.
+자주 쓰이는 부분을 공유하면 이런 변형을 더 작은 조각으로 표현 가능.
+한국어에서는 띄어쓰기 단위와 의미를 이루는 조각도 잘 맞지 않음.</p>
+<p>그다음 각 토큰을 사전의 정수 ID로 바꿈.</p>
+<pre><code class="language-text">민수는 / 사과를 / 먹었다  →  1 / 2 / 3
+</code></pre>
+<p>여기서는 세 단위를 각각 한 토큰으로 가정. ID도 임의로 붙인 것.
+<code>3</code>이 <code>1</code>보다 의미가 크다는 뜻은 아님. 그냥 사전에서 구별할 번호.</p>
+<p>특수 토큰도 같이 기억.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>토큰</th>
+<th>쓰는 이유</th>
+<th>예시</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>BOS</td>
+<td>시작 표시</td>
+<td><code>[BOS] 민수는 ...</code></td>
+</tr>
+<tr>
+<td>EOS</td>
+<td>끝 표시</td>
+<td><code>... 먹었다 [EOS]</code></td>
+</tr>
+<tr>
+<td>PAD</td>
+<td>길이를 맞추는 빈자리</td>
+<td>짧은 문장 뒤에 채움</td>
+</tr>
+<tr>
+<td>UNK</td>
+<td>사전에 없는 입력 표시</td>
+<td>해당 토크나이저가 표현하지 못하는 조각</td>
+</tr>
+</tbody></table></div>
+<p>실제 이름과 사용 여부는 모델마다 다름.</p>
+<h2 id="part-2">2 ID에서 임베딩 벡터로</h2>
+<p>ID만으로는 단어 사이 관계를 표현하기 어려움.
+ID에 해당하는 행을 임베딩 테이블에서 꺼내 숫자 벡터로 사용.</p>
+<p><img src="../assets/ch01/slide-033-embedding.png" alt="CME 295 Lecture 1 원본 p33 one-hot과 학습된 임베딩 비교"></p>
+<p>이걸 작은 조회 예제로 옮기면,</p>
+<pre><code class="language-text">사과를의 ID = 2
+임베딩 테이블 E의 2번 행 = [0.2, -0.1, 0.7, 0.4]
+→ 이 행을 사과를의 입력 벡터로 사용
+</code></pre>
+<p>그럼 같은 토큰이 두 번 나오면?</p>
+<p>두 위치 모두 같은 행을 꺼냄. <code>사과를</code>의 ID가 둘 다 2라면 둘 다 E의 2번 행.
+이 행을 바꾸고 다시 조회하면 두 위치의 벡터가 같이 바뀜.
+그 뒤에 위치 정보와 문맥이 반영되면서 각 위치의 표현은 달라질 수 있음.</p>
+<ul>
+<li>어휘 크기 <code>V_vocab</code> → 사전에 있는 토큰 종류 수</li>
+<li>임베딩 차원 <code>d_model</code> → 토큰 하나를 표현하는 벡터 길이</li>
+<li>테이블 모양 → <code>V_vocab × d_model</code></li>
+</ul>
+<p>여기서 어휘 크기와 뒤에 나오는 attention의 Value를 혼동하지 않으려고 <code>V_vocab</code>으로 적음.</p>
+<p>One-hot으로도 ID를 나타낼 수 있음.
+어휘가 4개라면 ID 2는 <code>[0, 0, 1, 0]</code>.
+이 벡터에 임베딩 테이블을 곱해도 같은 2번 행이 나옴.
+실제로는 굳이 큰 one-hot 벡터를 만들지 않고 행을 바로 조회할 수 있음.</p>
+<p><strong>그럼 벡터의 첫 번째 숫자는 ‘사람’, 두 번째는 ‘음식’ 같은 뜻일까?</strong></p>
+<p>보통 그렇게 정해두지 않음. 학습하면서 여러 차원에 특징이 나뉘어 담기는 것.
+숫자 하나에 뜻을 붙이기보다 벡터 전체로 생각하기.</p>
+<h2 id="part-3">3 Word2vec과 RNN을 거쳐 Attention으로</h2>
+<p>Word2vec은 주변 단어를 맞히는 등의 과제를 통해 단어 벡터를 학습.</p>
+<ul>
+<li>CBOW → 주변 단어로 가운데 단어 예측<ul>
+<li><code>민수는 [ ? ] 먹었다</code>에서 빈자리를 맞히는 식</li>
+</ul>
+</li>
+<li>Skip-gram → 가운데 단어로 주변 단어 예측<ul>
+<li><code>사과를</code>로 주변의 <code>민수는</code>, <code>먹었다</code> 등을 맞히는 식</li>
+</ul>
+</li>
+</ul>
+<p>여기서 예측은 정답을 확정한다는 뜻이 아니라 후보의 확률을 계산한다는 뜻.</p>
+<p>일반적인 Word2vec은 같은 단어에 같은 벡터를 줌.
+<code>먹는 배</code>와 <code>타는 배</code>의 ‘배’를 같은 어휘 항목으로 두었다면 기본 벡터는 같음.
+문맥에 따라 달라지는 표현이 필요해지는 지점.</p>
+<p><img src="../assets/ch01/slide-045-rnn.png" alt="CME 295 Lecture 1 원본 p45 상태를 순서대로 전달하는 RNN"></p>
+<p>RNN은 앞에서 계산한 상태를 다음 위치로 넘김.</p>
+<p><code>민수는의 상태 → 사과를의 상태 → 먹었다의 상태</code></p>
+<p>순서는 반영되지만 뒤의 상태를 계산하려면 앞의 계산이 필요.
+먼 정보를 전달하는 경로도 길어짐.
+LSTM은 무엇을 기억하고 지울지 조절하는 gate와 별도의 cell state를 둬서 이 문제를 완화.
+그래도 순차적으로 상태를 전달하는 구조는 남음.</p>
+<p>Attention은 현재 위치가 필요한 다른 위치의 정보를 가중합으로 가져오는 방식.
+번역에서 긴 입력을 하나의 상태에만 담기 어려웠던 문제와 연결됨.
+원래 Transformer는 RNN 없이 attention과 FFN 등을 사용하도록 구성됨.</p>
+<p><strong>그럼 Attention이면 긴 문장의 문제가 전부 해결될까?</strong></p>
+<p>정보를 직접 참고하는 경로는 짧아짐. 대신 기본 self-attention은 토큰 쌍의 점수를 계산.
+길이 100이면 10,000개, 길이 1,000이면 1,000,000개의 점수.
+문장이 10배 길어지면 이 부분은 100배가 됨.</p>
+<h2 id="part-4">4 Q K V로 참고할 정보 계산하기</h2>
+<p><code>민수는 사과를 먹었다</code>에서 지금은 <code>먹었다</code> 위치만 보기.
+“무엇을 먹었지?”라고 찾는 상황으로 비유.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>구분</th>
+<th>하는 일</th>
+<th>예시로 생각하면</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Query</td>
+<td>현재 위치에서 찾는 정보</td>
+<td><code>먹었다</code> 쪽의 “무엇을 먹었지?”</td>
+</tr>
+<tr>
+<td>Key</td>
+<td>Query와 비교할 특징</td>
+<td><code>사과를</code> 쪽에서 비교에 쓰는 특징</td>
+</tr>
+<tr>
+<td>Value</td>
+<td>가중합에 들어갈 정보</td>
+<td><code>사과를</code> 쪽에서 가져올 내용</td>
+</tr>
+</tbody></table></div>
+<p>실제 Q는 문장으로 된 질문이 아니라 숫자 벡터.
+각 토큰에 Q, K, V가 생기고, <code>먹었다</code>만 Q를 가지는 건 아님.</p>
+<p><img src="../assets/ch01/slide-061-qkv.png" alt="CME 295 Lecture 1 원본 p61 teddy bear의 Query가 각 토큰의 Key를 비교하는 그림"></p>
+<p>같은 입력 X에 서로 다른 학습 행렬을 곱함.</p>
+<pre><code class="language-text">Q = XW_Q
+K = XW_K
+V = XW_V
+</code></pre>
+<p><code>W_Q</code>, <code>W_K</code>, <code>W_V</code>가 다르니 출발점이 같아도 결과는 달라짐.
+X는 현재 층으로 들어오는 토큰 벡터들을 모은 것.
+첫 입력 이후의 층에서는 앞선 층이 계산한 표현이 들어옴.</p>
+<h3>작은 숫자로 계산</h3>
+<p><code>q_먹었다 = [1, 0]</code>으로 놓기.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>토큰</th>
+<th>K</th>
+<th>V</th>
+<th>q와 K의 내적</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>민수는</td>
+<td>[0, 1]</td>
+<td>[1, 0]</td>
+<td>0</td>
+</tr>
+<tr>
+<td>사과를</td>
+<td>[2, 0]</td>
+<td>[0, 2]</td>
+<td>2</td>
+</tr>
+<tr>
+<td>먹었다</td>
+<td>[1, 1]</td>
+<td>[1, 1]</td>
+<td>1</td>
+</tr>
+</tbody></table></div>
+<p><code>사과를</code>의 내적은 <code>1×2 + 0×0 = 2</code>.
+그다음 키 차원 <code>d_k = 2</code>의 제곱근으로 나누고 softmax.</p>
+<pre><code class="language-text">내적             [0, 2, 1]
+sqrt(2)로 나누기 [0, 1.4142, 0.7071]
+softmax          [0.1400, 0.5760, 0.2840]
+</code></pre>
+<p>Softmax는 <code>exp(각 점수) / [모든 exp(점수)의 합]</code>.
+큰 점수에 더 큰 비율을 주고, 비율 전체의 합을 1로 만듦.</p>
+<p><img src="../assets/ch01/slide-062-attention.png" alt="CME 295 Lecture 1 원본 p62 scaled dot-product attention 계산 순서"></p>
+<p>마지막에는 그 비율로 V들을 섞음.</p>
+<pre><code class="language-text">출력 ≈ 0.140 × [1, 0] + 0.576 × [0, 2] + 0.284 × [1, 1]
+     = [0.424, 1.436]
+</code></pre>
+<p><code>사과를</code> 하나를 뽑는 연산이 아니라 세 V의 가중합.
+이 출력은 <code>먹었다</code> 위치에서 계산한 벡터. 다음 토큰 확률과는 구분.</p>
+<p>그럼 같은 단어가 다른 문맥에서 달라지는 건 어디서일까?</p>
+<p><code>먹는 배</code>와 <code>타는 배</code>에서 ‘배’가 같은 토큰 ID라면 임베딩 조회값은 같음.
+Attention에서는 참고하는 주변 토큰이 달라져 가중치와 가져오는 V가 달라질 수 있음.
+그래서 출발 벡터는 같아도 attention을 거친 표현은 달라질 수 있는 것.</p>
+<p>이 과정을 모든 Q에 대해 한꺼번에 쓰면,</p>
+<div class="equation">Attention(Q, K, V) = softmax(QK<sup>T</sup> / √d<sub>k</sub>)V</div>
+
+<p>토큰 3개, Q와 K 차원 2, V 차원 2라면,</p>
+<pre><code class="language-text">Q       (3, 2)
+Kᵀ      (2, 3)
+QKᵀ     (3, 3)  ← 각 위치가 세 위치를 얼마나 참고할지
+출력    (3, 2)  ← (3, 3) 가중치와 (3, 2) V의 행렬곱
+</code></pre>
+<p>Softmax는 각 행 안에서 적용. 한 Q가 참고할 K들에 대한 비율을 만드는 것.</p>
+<p><strong>그럼 K와 V는 왜 나눌까?</strong></p>
+<p>검색할 책을 고르는 특징과 실제로 읽을 내용을 다르게 만들 수 있게 한 것.
+그럼 Q, K는 두고 V만 바꾸면?</p>
+<p>위 예시에서 <code>사과를</code>의 V만 <code>[0, 2]</code>에서 <code>[0, 4]</code>로 바꿔보기.
+가중치는 그대로인데 출력은 약 <code>[0.424, 1.436]</code>에서 <code>[0.424, 2.588]</code>로 바뀜.
+어디를 얼마나 참고할지는 Q와 K가, 실제 섞이는 내용은 V가 정한다는 뜻.
+더 긴 계산은 <a href="notes--01-attention-qkv.html">Q K V 보충 노트</a>에 적어둠.</p>
+<p><strong>왜 차원의 제곱근으로 나눌까?</strong></p>
+<p>Q와 K의 성분이 각각 평균 0, 분산 1이고 서로 독립이라는 단순한 가정을 두면,
+내적의 분산은 <code>d_k</code>, 표준편차는 <code>sqrt(d_k)</code>.
+이 크기를 나눠 점수 규모를 조절. Softmax가 너무 한쪽에 몰리는 것을 줄이려는 것.
+실제 학습된 Q, K가 항상 이 가정을 정확히 만족한다는 뜻은 아님.</p>
+<h2 id="part-5">5 위치 정보와 여러 개의 Head</h2>
+<h3>단어만 알아서는 순서가 빠짐</h3>
+<p><code>민수가 영희를 도왔다</code>와 <code>영희가 민수를 도왔다</code>는 누가 누구를 도왔는지가 다름.
+각 토큰의 벡터에 문장 속 위치 정보도 필요.</p>
+<p>위치 정보와 마스크가 없는 self-attention에서 입력 순서를 바꾸면 출력도 같은 순서로 재배열됨.
+연산 자체만으로 어느 토큰이 첫 번째인지 따로 알려주지는 못함.</p>
+<p>원래 Transformer에서는 토큰 임베딩에 위치 벡터를 더함.</p>
+<p><img src="../assets/ch01/slide-068-position.png" alt="CME 295 Lecture 1 원본 p68 위치 정보를 입력에 더하는 구조"></p>
+<p>벡터를 이어 붙여 길이를 늘리는 게 아니라 같은 차원끼리 더함.
+작은 예시로 <code>[0.2, -0.1, 0.7, 0.4] + [0, 1, 0, 1] = [0.2, 0.9, 0.7, 1.4]</code>.
+길이 4가 그대로 유지됨.
+원래 논문의 sin/cos 방식 외에 학습하는 위치 표현도 있음.</p>
+<p><strong>그럼 더하면 단어 정보가 사라지는 건 아닐까?</strong></p>
+<p>별도 칸에 보관하는 방식은 아님. 합쳐진 표현을 입력으로 모델이 학습.
+단어와 위치를 어떻게 구별해 활용하는지는 다음에 작은 예제로 더 확인할 부분.</p>
+<h3>여러 Head로 나눠 보기</h3>
+<p>한 가지 변환으로만 Q, K, V를 만들지 않고, head마다 다른 변환을 사용.
+각 head가 계산한 출력을 연결한 다음 <code>W_O</code>로 변환.</p>
+<p><img src="../assets/ch01/slide-076-multihead.png" alt="CME 295 Lecture 1 원본 p76 여러 attention head를 병렬로 사용하는 설명"></p>
+<p>예를 들어 <code>d_model = 8</code>, head가 2개이고 각 head의 출력 차원이 4라면,</p>
+<p><code>4차원 출력 + 4차원 출력 → 연결해서 8차원 → W_O</code></p>
+<p>여기서 <code>+</code>는 성분끼리 더하기가 아니라 연결한다는 뜻.
+‘첫 번째 head는 주어, 두 번째는 목적어’처럼 역할을 미리 정하는 것은 아님.</p>
+<h2 id="part-6">6 Encoder와 Decoder를 연결하면</h2>
+<p>1강에서 다루는 기본 구조는 번역용 Encoder–Decoder Transformer.</p>
+<ul>
+<li>Encoder → 입력 문장을 읽고 각 위치의 문맥 벡터 계산</li>
+<li>Decoder → Encoder 출력과 지금까지 만든 번역을 참고해 다음 토큰 예측</li>
+</ul>
+<p><img src="../assets/ch01/slide-064-transformer.png" alt="CME 295 Lecture 1 원본 p64 Encoder와 Decoder를 연결한 Transformer 전체 구조"></p>
+<p>번역 예시로 보면 입력 문장 <code>A bear is reading.</code>을 Encoder에 넣음.
+Decoder는 <code>[BOS]</code>부터 시작해서 <code>곰이</code>, <code>읽고</code>, <code>있다</code> 같은 번역 토큰을 차례로 생성한다고 생각.
+번역 토큰 분할은 설명용 가정.</p>
+<p>Decoder 안에는 attention이 두 종류.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>구분</th>
+<th>Q는 어디서</th>
+<th>K와 V는 어디서</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Masked self-attention</td>
+<td>Decoder 쪽 입력 표현</td>
+<td>같은 Decoder 쪽 입력 표현</td>
+</tr>
+<tr>
+<td>Cross-attention</td>
+<td>Decoder의 앞선 sublayer 출력</td>
+<td>Encoder의 최종 출력</td>
+</tr>
+</tbody></table></div>
+<p><strong>그럼 Self와 Cross를 나누는 기준은?</strong></p>
+<p>같은 시퀀스의 표현끼리 참고하면 Self.
+Decoder가 다른 시퀀스인 원문의 표현을 참고하면 Cross.</p>
+<p>GPT 계열의 decoder-only 모델은 이 전체 번역 구조와 다름.
+보통 별도의 Encoder와 그 출력을 받는 cross-attention 없이, 앞의 토큰들을 참고해서 생성.</p>
+<h2 id="part-7">7 Decoder에서 미래를 가리는 이유</h2>
+<p>학습할 때는 정답 문장이 이미 있으니 모든 위치의 입력을 한 번에 넣을 수 있음.
+그렇다고 뒤의 정답까지 참고하면 다음 토큰을 예측하는 연습이 안 됨.</p>
+<pre><code class="language-text">입력:  [BOS]  민수는  사과를  먹었다
+정답:   민수는  사과를  먹었다  [EOS]
+</code></pre>
+<p>그럼 mask를 없애면 어느 위치에서 정답이 보일까?</p>
+<p><code>[BOS]</code> 위치에서는 뒤의 <code>민수는</code>, <code>민수는</code> 위치에서는 뒤의 <code>사과를</code>이 보임.
+<code>사과를</code> 위치도 맞혀야 할 <code>먹었다</code>를 입력에서 바로 참고할 수 있음.
+이러면 앞의 내용으로 예측하는 대신 뒤의 정답을 가져오는 식으로 학습할 수 있음.</p>
+<p><img src="../assets/ch01/slide-075-mask.png" alt="CME 295 Lecture 1 원본 p75 미래 위치를 가리는 causal masking"></p>
+<p>그래서 뒤쪽 위치의 attention 점수에 <code>-∞</code>를 넣고 softmax.
+그 위치의 가중치는 0이 됨. 자기 위치와 앞쪽 위치는 참고 가능.</p>
+<p>PAD를 가리는 padding mask는 목적이 다름.
+미래를 가리는 게 아니라 길이 맞추기용 빈자리를 참고하지 않게 하는 것.</p>
+<p><strong>그럼 학습은 한꺼번에 하는데 생성은 왜 순서대로 할까?</strong></p>
+<p>학습에서는 정답 문장의 앞 토큰들이 이미 주어짐.
+생성에서는 다음 토큰이 아직 없으니 하나를 정한 뒤 뒤에 붙여서 다시 계산해야 함.</p>
+<h2 id="part-8">8 Attention 옆에 붙어 있는 것들</h2>
+<p>Attention 뒤에는 FFN, residual connection, layer normalization도 붙음.</p>
+<h3>FFN</h3>
+<p>토큰 위치마다 적용하는 작은 신경망.
+Attention이 여러 위치의 정보를 섞었다면, FFN은 각 위치의 특징을 비선형으로 변환.
+같은 층에서는 위치마다 같은 가중치를 사용.</p>
+<p>원래 Transformer의 형태는 <code>Linear → ReLU → Linear</code>.
+예를 들어 토큰당 4차원에서 16차원으로 넓혔다가 다시 4차원으로 줄일 수 있음.</p>
+<h3>Residual connection</h3>
+<p><img src="../assets/ch01/slide-073-residual.png" alt="CME 295 Lecture 1 원본 p73 입력을 우회 경로로 전달하는 residual connection"></p>
+<p>입력 x에 층이 계산한 결과 F(x)를 더함.</p>
+<pre><code class="language-text">x       = [1, 2]
+F(x)    = [0.3, -0.5]
+x+F(x)  = [1.3, 1.5]
+</code></pre>
+<p>앞의 표현을 다음으로 전달하는 경로를 두고, 깊은 모델에서 기울기가 흐르는 데도 도움.</p>
+<h3>Layer normalization</h3>
+<p>토큰 하나의 특징 차원들을 기준으로 평균과 분산을 계산해 정규화.
+예를 들어 <code>[1, 3]</code>이면 평균 2, 분산 1.
+작은 epsilon과 학습되는 크기·이동 파라미터를 잠깐 빼고 보면 <code>[-1, 1]</code>이 됨.</p>
+<p>여러 토큰의 값을 한데 평균 내는 계산으로 이해하면 안 됨.
+원래 논문에서는 <code>LayerNorm(x + F(x))</code> 순서.
+모든 Transformer가 이 순서를 그대로 쓰는 것은 아님.</p>
+<h3>Dropout과 Label smoothing</h3>
+<ul>
+<li>Dropout → 학습 중 일부 활성값을 확률적으로 0으로 만드는 방식. 보통 추론 시에는 끔.</li>
+<li>Label smoothing → 정답 분포가 한 곳에만 1로 몰리지 않게 조금 완화.</li>
+</ul>
+<p>클래스 4개, smoothing 0.1을 균등분포와 섞는 정의라면,</p>
+<p><code>[1, 0, 0, 0] → [0.925, 0.025, 0.025, 0.025]</code></p>
+<p>항상 이 숫자 규칙으로 구현되는 건 아님. 정답 외 클래스에만 나누는 정의도 있으니 구현에서 확인.</p>
+<h2 id="part-9">9 마지막 벡터가 어떻게 단어가 되는지</h2>
+<p>Decoder를 통과한 마지막 위치의 벡터는 여전히 길이 <code>d_model</code>짜리 숫자 묶음.
+출력 Linear가 이것을 어휘 개수만큼의 점수, 즉 logits로 바꿈.
+Softmax를 거치면 어휘 전체의 확률 분포가 됨.</p>
+<p><img src="../assets/ch01/slide-072-output.png" alt="CME 295 Lecture 1 원본 p72 Linear와 softmax를 거쳐 어휘 확률을 만드는 출력층"></p>
+<p><code>[BOS] 민수는 사과를</code>까지 들어왔다고 가정.
+예를 들어 다음 토큰 확률이 <code>먹었다 65%, 샀다 25%, 나머지 합계 10%</code>일 수 있음.
+이 확률은 모델에서 측정한 값이 아니라 설명용.</p>
+<p>가장 높은 토큰을 고르는 방식이라면 <code>먹었다</code>를 붙임.
+그다음에는 <code>[BOS] 민수는 사과를 먹었다</code>를 바탕으로 다시 다음 토큰 예측.
+확률에서 샘플링하는 방법도 있고, EOS나 길이 제한 등의 종료 조건에서 멈춤.</p>
+<p><strong>Attention에서 쓴 softmax와 여기의 softmax는 뭐가 다를까?</strong></p>
+<ul>
+<li>Attention softmax → 문장 안에서 참고할 <strong>위치들</strong>에 대한 비율</li>
+<li>출력 softmax → 다음에 나올 <strong>어휘들</strong>에 대한 확률</li>
+</ul>
+<p>둘 다 합이 1이지만, 무엇에 대해 합을 내는지가 다름.</p>
+<h2 id="part-10">10 한 문장으로 다시 연결</h2>
+<p><code>[BOS] 민수는 사과를</code>에서 다음 토큰을 예측하는 decoder-only 예시.</p>
+<ol>
+<li>토큰을 ID로 바꿈. 여기서는 세 토큰이라고 가정.</li>
+<li>각 ID로 임베딩 벡터를 꺼냄. <code>d_model=4</code>라면 모양은 <code>(3, 4)</code>.</li>
+<li>위치 정보를 반영.</li>
+<li>각 층에서 Q, K, V를 만들고 causal mask를 적용해 attention 계산.</li>
+<li>여러 head의 출력을 합치고, residual·정규화·FFN 등을 통과.</li>
+<li>마지막 위치의 벡터를 어휘 크기만큼의 logits로 바꿈.</li>
+<li>Softmax 뒤에 토큰 하나를 선택하고 입력 뒤에 붙임.</li>
+</ol>
+<p>여기서 토큰이 계속 새 단어로 바뀌는 게 아니라, 층을 거치며 <strong>각 위치의 벡터 표현</strong>이 바뀌는 것.
+마지막 출력층에서 어휘 후보에 대한 점수가 나옴.</p>
+<h2 id="part-11">참고자료</h2>
+<ul>
+<li><a href="https://cme295.stanford.edu/">Stanford CME 295 — Lecture 1</a></li>
+<li><a href="https://arxiv.org/html/1706.03762v7">Attention Is All You Need</a></li>
+</ul>
+<footer><a href="../index.html">전체 목차로 돌아가기</a></footer></article></body></html>

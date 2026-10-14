@@ -1,0 +1,80 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>5단원 노이즈를 예측하는 모델 안쪽</title><style>*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f5f5f3;color:#24292f;font:16px/1.85 'Malgun Gothic',sans-serif}article{max-width:960px;margin:32px auto;padding:42px 52px;background:white;border:1px solid #dce1e5;border-radius:8px;overflow-wrap:anywhere}h1{font-size:29px;line-height:1.5;letter-spacing:-.8px}h2{font-size:23px;margin-top:52px;padding-top:20px;border-top:1px solid #d8dee4;scroll-margin-top:22px}h3{font-size:20px;margin-top:30px}p{margin:16px 0}a{color:#15569a;text-underline-offset:3px}img{display:block;max-width:100%;height:auto;border:1px solid #ddd;margin-top:24px}code{font:14px/1.7 Consolas,'Malgun Gothic',monospace;background:#f0f2f4;padding:2px 4px;border-radius:4px}pre{padding:18px;background:#f4f6f8;border-radius:6px;overflow-x:auto;overflow-wrap:normal}pre code{padding:0;background:none}table{border-collapse:collapse;width:100%;font-size:15px}td,th{border:1px solid #d5dae0;padding:9px 12px;text-align:left}th{background:#f4f6f8}.table-wrap{overflow-x:auto;margin:20px 0}li{margin:6px 0}.equation{font:22px/1.6 Cambria,serif;text-align:center;padding:22px;background:#f4f6f8;overflow-x:auto}details{background:#f4f6f8;padding:10px 18px;border-radius:6px;margin:22px 0}summary{cursor:pointer}nav a{display:block;padding:3px 0;text-decoration:none}.top{font-size:13px;color:#63717b}.top a{margin-right:14px}footer{margin-top:50px;padding-top:16px;border-top:1px solid #ddd;font-size:14px}@media(max-width:700px){article{margin:0;padding:24px 18px;border:0;border-radius:0}body{font-size:15px}h1{font-size:25px}h2{font-size:21px}td,th{padding:7px}table{font-size:13px}.equation{font-size:18px;padding:14px}}</style></head><body><article><div class="top"><a href="../index.html">전체 목차</a>CME 296</div><details><summary>이 노트의 목차</summary><nav><a href="#part-1">U-Net은 줄였다가 다시 키움</a><a href="#part-2">시간과 조건을 전달</a><a href="#part-3">DiT는 latent를 patch token으로 처리</a><a href="#part-4">adaLN은 조건에 따라 정규화 뒤 값을 조절</a><a href="#part-5">Transformer 출력은 다시 공간 배열로</a><a href="#part-6">텍스트와 이미지를 함께 처리</a><a href="#part-7">이미지 위치는 가로와 세로가 있음</a><a href="#part-8">참고자료</a></nav></details><h1>5단원 노이즈를 예측하는 모델 안쪽</h1>
+<p>Diffusion은 학습과 생성의 방식이고, U-Net이나 Transformer는 그 안에서 쓰는 모델 구조.
+어떤 구조를 쓰든 noisy input과 시간·조건을 받아 필요한 값을 예측해야 함.</p>
+<h2 id="part-1">U-Net은 줄였다가 다시 키움</h2>
+<p><img src="../assets/cme296/05/2026-026.png" alt="U-Net 구조"></p>
+<p>Downsampling으로 공간 크기를 줄이면서 넓은 영역의 정보를 모음.
+Upsampling으로 다시 크기를 키워 위치별 출력을 만듦.
+같은 해상도의 앞쪽 feature를 뒤쪽으로 전달하는 skip connection도 사용.</p>
+<pre><code class="language-text">64×64 → 32×32 → 16×16
+                   ↓
+64×64 ← 32×32 ← 16×16
+</code></pre>
+<p>작은 feature map은 큰 구조를 보기 쉽지만 세부 위치 정보가 줄어들 수 있음.
+앞쪽의 세부 정보를 연결해서 복원에 활용하는 이유.
+여기서 skip은 feature를 이어 붙이는 등 구현이 다양해서 residual의 덧셈과 항상 같지는 않음.</p>
+<h2 id="part-2">시간과 조건을 전달</h2>
+<p><img src="../assets/cme296/05/2026-035.png" alt="U-Net에 시간과 조건 넣기"></p>
+<p>같은 형태의 입력이라도 생성 초반인지 마지막인지에 따라 필요한 예측이 달라짐.
+t를 embedding으로 바꿔 각 block의 feature에 반영.
+Class embedding이나 텍스트 조건도 더하거나 cross-attention 등으로 연결할 수 있음.</p>
+<p><code>강아지</code>라는 조건을 입력 맨 앞에 한 번 넣는 것만이 방법은 아님.
+여러 층에서 조건을 다시 사용하게 만드는 구성이 가능.</p>
+<h2 id="part-3">DiT는 latent를 patch token으로 처리</h2>
+<p><img src="../assets/cme296/05/2026-048.png" alt="DiT의 patchify"></p>
+<p>DiT는 Diffusion Transformer.
+Noisy latent를 작은 patch로 나눠 Transformer 입력으로 사용.</p>
+<p>계산용으로 <code>16×16×4</code> latent를 <code>2×2</code> patch로 나눈다고 가정.</p>
+<pre><code class="language-text">patch 수: 8×8 = 64개
+patch 하나의 숫자: 2×2×4 = 16개
+16개 숫자 → 선형 변환 → 예를 들어 128차원 token
+</code></pre>
+<p>모델 안에서는 <code>[64, 128]</code> 모양의 token 배열로 처리 가능.
+128은 예제에서 정한 hidden dimension. Patch의 숫자 개수와 같을 필요는 없음.</p>
+<h2 id="part-4">adaLN은 조건에 따라 정규화 뒤 값을 조절</h2>
+<p><img src="../assets/cme296/05/2026-050.png" alt="Adaptive LayerNorm"></p>
+<p>LayerNorm 뒤에 적용하는 scale과 shift를 조건 embedding에서 계산.</p>
+<pre><code class="language-text">조건 c와 시간 t → 작은 네트워크 → γ, β
+출력 = γ ⊙ LayerNorm(x) + β
+</code></pre>
+<p>구현에서는 scale을 <code>1+γ</code>로 쓰기도 함.
+고정된 γ, β 대신 현재 시간과 조건에 맞는 값을 쓰는 점이 핵심.</p>
+<p>정규화가 조건을 이해하는 건가?</p>
+<p>정규화 계산 자체가 텍스트를 읽는 건 아님.
+조건을 읽은 작은 네트워크가 feature를 얼마나 키우고 이동할지 정해주는 구조.</p>
+<p><img src="../assets/cme296/05/2026-072.png" alt="adaLN-Zero의 scale shift gate"></p>
+<p>adaLN-Zero에서는 residual branch의 결과에 곱할 gate도 사용.
+초기에 gate가 0이면 <code>x + 0×F(x)</code>이므로 block이 입력을 거의 그대로 통과시킴.
+학습하면서 필요한 변화를 열어가는 형태.</p>
+<h2 id="part-5">Transformer 출력은 다시 공간 배열로</h2>
+<p><img src="../assets/cme296/05/2026-109.png" alt="DiT 출력의 projection과 reshape"></p>
+<p>앞의 예제에서 token 64개를 처리했다면 각 token을 patch 모양의 출력으로 변환.
+이들을 원래 위치로 합쳐 <code>16×16×4</code> 같은 예측 배열을 얻음.</p>
+<pre><code class="language-text">noisy latent → patch tokens → Transformer
+→ patch별 예측 → 공간 배열 → sampler update
+</code></pre>
+<p>출력이 바로 완성된 RGB 이미지인 것은 아님.
+Noise나 velocity 등 학습 목표에 맞는 값을 내고, sampler가 다음 latent를 계산.
+여러 step 이후 decoder가 최종 이미지를 만듦.</p>
+<h2 id="part-6">텍스트와 이미지를 함께 처리</h2>
+<p><img src="../assets/cme296/05/2026-133.png" alt="MM-DiT의 stream 구성"></p>
+<p>MM-DiT 계열은 이미지와 텍스트의 표현이 joint attention으로 정보를 주고받게 함.</p>
+<p>예를 들어 <code>빨간 컵</code>의 텍스트 token과 컵이 있을 법한 이미지 patch가 서로 참조.
+텍스트를 단순한 class 번호 하나로 압축하는 것보다 풍부한 조건을 다룰 수 있음.</p>
+<p>Single-stream은 두 modality를 한 stream에서 처리.
+Double-stream은 modality별 변환을 두면서 attention으로 연결하는 형태.
+두 종류의 block을 섞는 hybrid 구성도 있음.
+이름만 보고 모든 층의 가중치 공유 방식이 같다고 가정하지 않기.</p>
+<h2 id="part-7">이미지 위치는 가로와 세로가 있음</h2>
+<p><img src="../assets/cme296/05/2026-161.png" alt="2D RoPE"></p>
+<p>텍스트는 주로 1차원 순서지만 이미지 patch에는 <code>(행, 열)</code> 좌표가 있음.
+2D RoPE는 두 축의 위치를 Q와 K의 회전에 반영.
+축별로 차원을 나누는 방법이나, 회전에 두 좌표를 함께 반영하는 방법 등이 있음.</p>
+<p><code>(2,3)</code>과 <code>(2,4)</code>는 가로 이웃, <code>(2,3)</code>과 <code>(3,3)</code>은 세로 이웃.
+단순히 펼친 배열의 index 차이만으로는 이 구분이 직접 드러나지 않음.
+Patch 위치 관계를 attention에서 활용하도록 넣는 장치.</p>
+<h2 id="part-8">참고자료</h2>
+<ul>
+<li><a href="https://cme296.stanford.edu/">Stanford CME 296</a></li>
+</ul>
+<footer><a href="../index.html">전체 목차로 돌아가기</a></footer></article></body></html>

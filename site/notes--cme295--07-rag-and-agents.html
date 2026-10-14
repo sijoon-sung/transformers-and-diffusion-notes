@@ -1,0 +1,82 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>7단원 문서를 찾고 도구를 사용하는 LLM</title><style>*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f5f5f3;color:#24292f;font:16px/1.85 'Malgun Gothic',sans-serif}article{max-width:960px;margin:32px auto;padding:42px 52px;background:white;border:1px solid #dce1e5;border-radius:8px;overflow-wrap:anywhere}h1{font-size:29px;line-height:1.5;letter-spacing:-.8px}h2{font-size:23px;margin-top:52px;padding-top:20px;border-top:1px solid #d8dee4;scroll-margin-top:22px}h3{font-size:20px;margin-top:30px}p{margin:16px 0}a{color:#15569a;text-underline-offset:3px}img{display:block;max-width:100%;height:auto;border:1px solid #ddd;margin-top:24px}code{font:14px/1.7 Consolas,'Malgun Gothic',monospace;background:#f0f2f4;padding:2px 4px;border-radius:4px}pre{padding:18px;background:#f4f6f8;border-radius:6px;overflow-x:auto;overflow-wrap:normal}pre code{padding:0;background:none}table{border-collapse:collapse;width:100%;font-size:15px}td,th{border:1px solid #d5dae0;padding:9px 12px;text-align:left}th{background:#f4f6f8}.table-wrap{overflow-x:auto;margin:20px 0}li{margin:6px 0}.equation{font:22px/1.6 Cambria,serif;text-align:center;padding:22px;background:#f4f6f8;overflow-x:auto}details{background:#f4f6f8;padding:10px 18px;border-radius:6px;margin:22px 0}summary{cursor:pointer}nav a{display:block;padding:3px 0;text-decoration:none}.top{font-size:13px;color:#63717b}.top a{margin-right:14px}footer{margin-top:50px;padding-top:16px;border-top:1px solid #ddd;font-size:14px}@media(max-width:700px){article{margin:0;padding:24px 18px;border:0;border-radius:0}body{font-size:15px}h1{font-size:25px}h2{font-size:21px}td,th{padding:7px}table{font-size:13px}.equation{font-size:18px;padding:14px}}</style></head><body><article><div class="top"><a href="../index.html">전체 목차</a>CME 295</div><details><summary>이 노트의 목차</summary><nav><a href="#part-1">RAG는 답변 전에 자료를 가져오는 것</a><a href="#part-2">긴 문서를 chunk로 나누기</a><a href="#part-3">단어 검색과 의미 검색</a><a href="#part-4">후보를 모은 뒤 순서 다시 매기기</a><a href="#part-5">Tool calling에서 실제 실행은 누가 하나</a><a href="#part-6">MCP는 연결 방식을 맞추는 규약</a><a href="#part-7">Agent는 결과를 보고 다음 행동을 결정</a><a href="#part-8">참고자료</a></nav></details><h1>7단원 문서를 찾고 도구를 사용하는 LLM</h1>
+<p>모델이 모든 정보를 가중치 안에 기억할 필요는 없음.
+질문과 관련된 문서를 찾거나, 계산·검색 도구를 호출해서 답변에 사용.</p>
+<h2 id="part-1">RAG는 답변 전에 자료를 가져오는 것</h2>
+<p><img src="../assets/cme295/07/2025-024.png" alt="RAG의 구성"></p>
+<p>예를 들어 가상의 학교 규정에 <code>졸업에는 130학점 필요</code>라고 적혀 있다고 가정.
+사용자가 졸업 학점을 물으면 관련 규정을 찾아 질문과 함께 모델에 전달.</p>
+<pre><code class="language-text">질문 → 관련 규정 검색 → 찾은 내용 + 질문 → 답변
+</code></pre>
+<p>모델을 새로 학습하지 않고도 문서 내용을 답변에 반영할 수 있음.
+문서가 수정되면 검색 대상도 갱신해야 함.</p>
+<p>RAG를 붙이면 환각이 없어질까?</p>
+<p>다른 학과 규정을 가져오거나, 오래된 문서를 검색하거나, 내용을 잘못 읽을 수 있음.
+검색이 맞았는지와 답변이 자료를 따랐는지를 나눠서 봐야 함.</p>
+<h2 id="part-2">긴 문서를 chunk로 나누기</h2>
+<p><img src="../assets/cme295/07/2025-033.png" alt="문서 분할과 임베딩"></p>
+<p>규정 전체를 하나의 벡터로 만들면 질문과 관계없는 내용도 섞임.
+조항이나 문단 단위로 나누고 각 chunk의 임베딩을 저장.</p>
+<pre><code class="language-text">chunk A: 졸업 이수 학점과 전공 필수 조건
+chunk B: 휴학 신청 절차
+chunk C: 장학금 신청 조건
+</code></pre>
+<p>너무 작게 자르면 <code>단, 아래 조건을 만족할 경우 제외</code> 같은 예외가 떨어져 나갈 수 있음.
+일부 구간을 겹치게 하거나 제목·조항 번호를 같이 보관하는 이유.
+정답이 들어 있는 문장을 검색해도 예외 조건이 빠지면 답이 틀릴 수 있음.</p>
+<h2 id="part-3">단어 검색과 의미 검색</h2>
+<p><img src="../assets/cme295/07/2025-047.png" alt="Hybrid retrieval"></p>
+<p>BM25 같은 lexical 검색은 실제 단어의 일치를 활용.
+Dense retrieval은 임베딩으로 의미가 가까운 내용을 찾음.</p>
+<p><code>학위 받으려면 몇 학점?</code>과 <code>졸업 이수 학점</code>은 표현이 달라도 의미가 가까움.
+반대로 <code>CS101</code> 같은 정확한 과목 코드는 문자 일치가 유용할 수 있음.
+Hybrid retrieval은 두 검색 결과를 결합.
+서로 다른 점수 척도를 그대로 더해도 되는지는 따로 정해야 함.</p>
+<h2 id="part-4">후보를 모은 뒤 순서 다시 매기기</h2>
+<p><img src="../assets/cme295/07/2025-062.png" alt="Reranking"></p>
+<p>먼저 넓게 후보 20개를 검색하고, reranker가 질문과 각 후보를 함께 읽어 다시 점수화.
+그중 상위 몇 개를 답변 모델에 전달하는 식.</p>
+<p>처음부터 모든 문서를 정밀하게 비교하면 비용이 큼.
+빠른 후보 검색과 더 비싼 재평가를 나누는 구조.
+처음 검색에서 빠진 문서는 reranker가 되살릴 수 없음.</p>
+<p><img src="../assets/cme295/07/2025-074.png" alt="Retrieval 평가 지표"></p>
+<p>정답 관련 문서가 총 4개이고 상위 5개 안에 2개가 들어 있다면,</p>
+<pre><code class="language-text">Recall@5 = 2 / 4 = 0.5
+Precision@5 = 2 / 5 = 0.4
+</code></pre>
+<p>첫 관련 문서가 3위라면 reciprocal rank는 <code>1/3</code>.
+관련 문서의 정도와 순서를 같이 보려면 NDCG 같은 지표도 사용.
+검색 점수가 좋아졌는지와 최종 답변이 좋아졌는지는 별도로 측정.</p>
+<h2 id="part-5">Tool calling에서 실제 실행은 누가 하나</h2>
+<p><img src="../assets/cme295/07/2025-093.png" alt="도구 호출과 결과 전달"></p>
+<p><code>123 × 456</code>을 계산하는 도구가 있다고 가정.</p>
+<pre><code class="language-text">모델: multiply(a=123, b=456) 호출 요청
+실행 프로그램: 계산 후 56088 반환
+모델: 반환된 결과로 답변 작성
+</code></pre>
+<p>함수 이름과 인자를 생성하는 것까지가 모델의 출력.
+실제 도구 실행, 인자 검사, 권한 확인은 연결된 프로그램이 담당.
+모델이 ‘실행했다’고 문장으로 말하는 것과 도구 실행 기록은 다름.</p>
+<h2 id="part-6">MCP는 연결 방식을 맞추는 규약</h2>
+<p><img src="../assets/cme295/07/2025-114.png" alt="MCP의 host client server"></p>
+<p>여러 도구마다 연결 방식을 새로 만들면 관리하기 어려움.
+MCP는 host, client, server 사이에서 도구나 리소스를 주고받는 방식을 표준화.</p>
+<p>계산기를 연결하는 규격이 같아지는 것에 가까움.
+연결했다고 모델이 언제 어떤 도구를 써야 하는지까지 자동으로 잘 판단하는 건 아님.</p>
+<h2 id="part-7">Agent는 결과를 보고 다음 행동을 결정</h2>
+<p><img src="../assets/cme295/07/2025-134.png" alt="ReAct의 관찰과 행동 반복"></p>
+<p>가상의 일정 확인 작업이라면,</p>
+<pre><code class="language-text">일정 검색 → 날짜가 빠져 있음 확인
+상세 페이지 조회 → 날짜 확인
+관련 조건 확인 → 답변 작성 후 종료
+</code></pre>
+<p>한 번의 도구 호출로 끝나지 않고 관찰한 결과로 다음 행동을 선택.
+ReAct는 reasoning과 action을 번갈아 진행하는 형태.</p>
+<p>다음 행동을 계속 만들면 언젠가 해결될까?</p>
+<p>같은 검색을 반복할 수 있어서 종료 조건과 호출 예산이 필요.
+검색 문서 안의 명령문도 작업 지시로 받아들이면 안 됨.
+도구 결과는 판단에 쓰는 자료이고, 그 안의 문장이 사용자 권한을 대신하지는 않음.</p>
+<h2 id="part-8">참고자료</h2>
+<ul>
+<li><a href="https://cme295.stanford.edu/">Stanford CME 295</a></li>
+</ul>
+<footer><a href="../index.html">전체 목차로 돌아가기</a></footer></article></body></html>

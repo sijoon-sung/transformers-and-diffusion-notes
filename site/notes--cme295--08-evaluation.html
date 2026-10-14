@@ -1,0 +1,77 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>8단원 모델이 좋아졌다는 걸 어떻게 확인할까</title><style>*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f5f5f3;color:#24292f;font:16px/1.85 'Malgun Gothic',sans-serif}article{max-width:960px;margin:32px auto;padding:42px 52px;background:white;border:1px solid #dce1e5;border-radius:8px;overflow-wrap:anywhere}h1{font-size:29px;line-height:1.5;letter-spacing:-.8px}h2{font-size:23px;margin-top:52px;padding-top:20px;border-top:1px solid #d8dee4;scroll-margin-top:22px}h3{font-size:20px;margin-top:30px}p{margin:16px 0}a{color:#15569a;text-underline-offset:3px}img{display:block;max-width:100%;height:auto;border:1px solid #ddd;margin-top:24px}code{font:14px/1.7 Consolas,'Malgun Gothic',monospace;background:#f0f2f4;padding:2px 4px;border-radius:4px}pre{padding:18px;background:#f4f6f8;border-radius:6px;overflow-x:auto;overflow-wrap:normal}pre code{padding:0;background:none}table{border-collapse:collapse;width:100%;font-size:15px}td,th{border:1px solid #d5dae0;padding:9px 12px;text-align:left}th{background:#f4f6f8}.table-wrap{overflow-x:auto;margin:20px 0}li{margin:6px 0}.equation{font:22px/1.6 Cambria,serif;text-align:center;padding:22px;background:#f4f6f8;overflow-x:auto}details{background:#f4f6f8;padding:10px 18px;border-radius:6px;margin:22px 0}summary{cursor:pointer}nav a{display:block;padding:3px 0;text-decoration:none}.top{font-size:13px;color:#63717b}.top a{margin-right:14px}footer{margin-top:50px;padding-top:16px;border-top:1px solid #ddd;font-size:14px}@media(max-width:700px){article{margin:0;padding:24px 18px;border:0;border-radius:0}body{font-size:15px}h1{font-size:25px}h2{font-size:21px}td,th{padding:7px}table{font-size:13px}.equation{font-size:18px;padding:14px}}</style></head><body><article><div class="top"><a href="../index.html">전체 목차</a>CME 295</div><details><summary>이 노트의 목차</summary><nav><a href="#part-1">사람이 답변을 비교</a><a href="#part-2">단어가 얼마나 겹치는지 보는 지표</a><a href="#part-3">LLM에게 채점시키기</a><a href="#part-4">문장 하나를 작은 사실들로 나누기</a><a href="#part-5">Agent는 중간 과정도 평가</a><a href="#part-6">한 번이라도 성공과 매번 성공</a><a href="#part-7">평가 문제가 학습 데이터에 들어갔다면</a><a href="#part-8">참고자료</a></nav></details><h1>8단원 모델이 좋아졌다는 걸 어떻게 확인할까</h1>
+<p>답변 하나가 그럴듯한 것과, 같은 조건에서 꾸준히 잘하는 것은 다름.
+무엇을 잘해야 하는지부터 정하고 평가 방법을 고르기.</p>
+<h2 id="part-1">사람이 답변을 비교</h2>
+<p><img src="../assets/cme295/08/2025-013.png" alt="Human evaluation"></p>
+<p>예를 들어 오류 해결 답변이면 정확성, 수정 방법의 실행 가능성, 설명의 이해도를 나눠볼 수 있음.
+긴 답변이라는 이유로 높은 점수를 주지 않도록 기준을 먼저 정함.</p>
+<p>같은 답변에 평가자마다 점수가 다르면?</p>
+<p>기준이 모호한지, 정답 자체가 여러 개인지 확인.
+여러 명의 평가와 일치도를 함께 보면 단일 점수에 가려진 차이가 보임.</p>
+<h2 id="part-2">단어가 얼마나 겹치는지 보는 지표</h2>
+<p><img src="../assets/cme295/08/2025-033.png" alt="BLEU ROUGE METEOR"></p>
+<pre><code class="language-text">기준 답: 오늘 비가 와서 경기가 취소됐다.
+생성 답: 우천으로 오늘 경기는 열리지 않았다.
+</code></pre>
+<p>의미는 비슷하지만 겹치는 단어 수는 적음.
+BLEU는 주로 n-gram precision, ROUGE는 주로 recall을 활용하는 계열의 지표.
+METEOR는 단어 정렬과 변형·동의어 등을 고려.
+정확한 계산은 지표 종류와 설정에 따라 달라짐.</p>
+<p>반대로 <code>경기가 취소됐다</code>를 <code>경기가 취소되지 않았다</code>로 바꾸면 글자는 비슷해도 뜻은 반대.
+문자열 일치를 사실 정확성으로 바로 읽으면 안 됨.</p>
+<h2 id="part-3">LLM에게 채점시키기</h2>
+<p><img src="../assets/cme295/08/2025-046.png" alt="LLM as a judge"></p>
+<p>Judge에게 질문, 후보 답변, 평가 기준을 전달.
+정답 자료가 있으면 같이 제공하고 판단 근거도 확인.
+대량 평가에 편하지만 judge도 모델이라 오류와 편향이 있음.</p>
+<p><img src="../assets/cme295/08/2025-063.png" alt="Position bias"></p>
+<p>A와 B의 순서를 뒤집었는데 계속 첫 번째 답변을 고르면 position bias를 의심.
+후보 순서를 바꿔 재평가하거나 순서를 무작위화하는 이유.</p>
+<p><img src="../assets/cme295/08/2025-067.png" alt="Verbosity bias"></p>
+<p>짧고 정확한 답보다 길고 틀린 답을 선호할 수도 있음.
+모델 이름을 숨기고, 길이·표현보다 내용에 관한 기준을 구체화.
+자동 채점 결과 일부를 사람이 확인해서 어떤 오류를 놓치는지도 봐야 함.</p>
+<h2 id="part-4">문장 하나를 작은 사실들로 나누기</h2>
+<p><img src="../assets/cme295/08/2025-091.png" alt="Factuality 평가의 claim 분해"></p>
+<p>가상의 가게 안내문이 <code>9시에 열고, 월요일은 쉬며, 주차는 무료</code>라고 답했다고 가정.</p>
+<pre><code class="language-text">claim 1: 9시에 연다.
+claim 2: 월요일은 쉰다.
+claim 3: 주차가 무료다.
+</code></pre>
+<p>이 중 1, 2만 자료로 확인되고 3은 근거가 없다면 따로 표시.
+근거 없음과 거짓으로 확인됨도 구분.
+문장 전체에 점수 하나만 매기는 것보다 어느 부분이 문제인지 찾기 쉬움.</p>
+<h2 id="part-5">Agent는 중간 과정도 평가</h2>
+<p><img src="../assets/cme295/08/2025-132.png" alt="Agent의 오류 유형"></p>
+<p>답이 틀렸을 때 원인이 다를 수 있음.</p>
+<ul>
+<li>필요한 검색 대신 계산기를 선택</li>
+<li>올바른 도구에 잘못된 날짜 인자를 전달</li>
+<li>도구가 timeout을 반환</li>
+<li>도구 결과는 맞는데 최종 답변에서 숫자를 바꿈</li>
+</ul>
+<p>이걸 모두 ‘모델 정답률 하락’으로만 묶으면 고칠 곳이 안 보임.
+도구 선택, 인자, 실행 결과, 최종 답변을 연결해서 확인.</p>
+<h2 id="part-6">한 번이라도 성공과 매번 성공</h2>
+<p><img src="../assets/cme295/08/2025-156.png" alt="Pass@k와 pass^k"></p>
+<p>Pass@k는 k번 중 한 번 이상 성공.
+Pass^k는 k번을 모두 성공하는 신뢰성 쪽 지표.</p>
+<p>계산용으로 각 시도가 서로 독립이고 성공 확률이 항상 0.8이라고 가정하면,</p>
+<pre><code class="language-text">pass@3 = 1 - (1-0.8)^3 = 0.992
+pass^3 = 0.8^3 = 0.512
+</code></pre>
+<p>같은 모델인데 숫자가 크게 다름.
+실제 평가에서는 같은 유형의 실패가 반복될 수 있으므로 독립 가정을 그대로 적용하면 안 됨.
+여러 시도 중 하나를 고를 수 있는 작업인지, 매번 안정적으로 성공해야 하는 작업인지부터 구분.</p>
+<h2 id="part-7">평가 문제가 학습 데이터에 들어갔다면</h2>
+<p><img src="../assets/cme295/08/2025-164.png" alt="Benchmark contamination"></p>
+<p>이미 본 문제를 잘 푸는 것과 새로운 문제에 일반화하는 것은 다름.
+평가 데이터와 학습 데이터의 중복, 비슷한 변형 문제의 유입도 확인.</p>
+<p>모델 비교에서는 prompt, 도구, 생성 예산 같은 조건도 맞춰야 함.
+정답률이 같아도 비용과 응답 시간이 다를 수 있어서 함께 기록.
+벤치마크 점수 하나를 모든 작업의 성능으로 확대하지 않기.</p>
+<h2 id="part-8">참고자료</h2>
+<ul>
+<li><a href="https://cme295.stanford.edu/">Stanford CME 295</a></li>
+</ul>
+<footer><a href="../index.html">전체 목차로 돌아가기</a></footer></article></body></html>

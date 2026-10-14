@@ -1,0 +1,10 @@
+{
+  "name": "transformers-and-diffusion-notes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Stanford CME 295·296 공개 자료로 공부한 Transformer, LLM, Diffusion 노트",
+  "type": "module",
+  "scripts": { "build": "node tools/build_site.mjs" },
+  "devDependencies": { "marked": "17.0.5" },
+  "engines": { "node": ">=22.12.0" }
+}

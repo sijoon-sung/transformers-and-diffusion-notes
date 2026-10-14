@@ -1,0 +1,77 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>5단원 더 나은 답변을 고르는 기준 학습하기</title><style>*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f5f5f3;color:#24292f;font:16px/1.85 'Malgun Gothic',sans-serif}article{max-width:960px;margin:32px auto;padding:42px 52px;background:white;border:1px solid #dce1e5;border-radius:8px;overflow-wrap:anywhere}h1{font-size:29px;line-height:1.5;letter-spacing:-.8px}h2{font-size:23px;margin-top:52px;padding-top:20px;border-top:1px solid #d8dee4;scroll-margin-top:22px}h3{font-size:20px;margin-top:30px}p{margin:16px 0}a{color:#15569a;text-underline-offset:3px}img{display:block;max-width:100%;height:auto;border:1px solid #ddd;margin-top:24px}code{font:14px/1.7 Consolas,'Malgun Gothic',monospace;background:#f0f2f4;padding:2px 4px;border-radius:4px}pre{padding:18px;background:#f4f6f8;border-radius:6px;overflow-x:auto;overflow-wrap:normal}pre code{padding:0;background:none}table{border-collapse:collapse;width:100%;font-size:15px}td,th{border:1px solid #d5dae0;padding:9px 12px;text-align:left}th{background:#f4f6f8}.table-wrap{overflow-x:auto;margin:20px 0}li{margin:6px 0}.equation{font:22px/1.6 Cambria,serif;text-align:center;padding:22px;background:#f4f6f8;overflow-x:auto}details{background:#f4f6f8;padding:10px 18px;border-radius:6px;margin:22px 0}summary{cursor:pointer}nav a{display:block;padding:3px 0;text-decoration:none}.top{font-size:13px;color:#63717b}.top a{margin-right:14px}footer{margin-top:50px;padding-top:16px;border-top:1px solid #ddd;font-size:14px}@media(max-width:700px){article{margin:0;padding:24px 18px;border:0;border-radius:0}body{font-size:15px}h1{font-size:25px}h2{font-size:21px}td,th{padding:7px}table{font-size:13px}.equation{font-size:18px;padding:14px}}</style></head><body><article><div class="top"><a href="../index.html">전체 목차</a>CME 295</div><details><summary>이 노트의 목차</summary><nav><a href="#part-1">선호도 데이터는 어떤 모양인지</a><a href="#part-2">Reward model로 선호를 점수화</a><a href="#part-3">점수를 높이는 방향으로 언어 모델 업데이트</a><a href="#part-4">PPO에서 한 번에 너무 크게 바꾸지 않기</a><a href="#part-5">학습 없이 여러 후보 중 고르는 방법</a><a href="#part-6">DPO는 비교 데이터를 바로 loss에 넣음</a><a href="#part-7">참고자료</a></nav></details><h1>5단원 더 나은 답변을 고르는 기준 학습하기</h1>
+<p>SFT는 좋은 답변을 따라 쓰게 하는 단계.
+Preference tuning에서는 같은 질문에 대한 여러 답변 중 무엇을 더 선호하는지도 사용.</p>
+<h2 id="part-1">선호도 데이터는 어떤 모양인지</h2>
+<p><img src="../assets/cme295/05/2025-019.png" alt="Pointwise pairwise listwise 선호도 데이터"></p>
+<p>질문이 <code>이 오류를 어떻게 고치지?</code>라고 가정.</p>
+<ul>
+<li>답변 A: 오류 원인과 수정 위치를 짚어줌</li>
+<li>답변 B: 관련은 있지만 원론적인 설명만 길게 함</li>
+</ul>
+<p>둘 다 문장은 자연스러워도 A가 더 유용할 수 있음.
+Pairwise 데이터는 이런 비교에서 A를 chosen, B를 rejected로 표시.
+Pointwise는 답변별 점수, listwise는 여러 답변의 순위를 사용하는 방식.</p>
+<p>그럼 선택된 답변은 완벽한 정답인가?</p>
+<p>비교 대상보다 선호되었다는 뜻. 둘 다 틀린 답변일 수도 있음.
+평가 기준과 annotator 간 일관성이 데이터 품질에 영향을 줌.</p>
+<h2 id="part-2">Reward model로 선호를 점수화</h2>
+<p><img src="../assets/cme295/05/2025-033.png" alt="RLHF의 reward modeling과 강화학습 단계"></p>
+<p>Reward model은 <code>(질문, 답변)</code>을 받아 하나의 점수를 냄.
+Chosen의 점수가 rejected보다 높아지도록 학습.</p>
+<p>두 답변의 점수 차이를 sigmoid에 넣는 비교 모델을 생각하면,</p>
+<pre><code class="language-text">r(A)=2, r(B)=0
+P(A가 선호됨) = sigmoid(2-0) ≈ 0.881
+</code></pre>
+<p>이 확률은 비교 모델의 출력. 사람이 실제로 88.1%의 빈도로 선택했다는 측정값은 아님.</p>
+<p><img src="../assets/cme295/05/2025-043.png" alt="Reward model의 입력과 학습"></p>
+<p>그럼 reward 10이면 reward 5보다 두 배 좋은 답변인가?</p>
+<p>그렇게 해석하기 어려움. 비교에서 어느 쪽 점수가 더 높은지와 그 차이가 학습의 핵심.
+점수의 절대 크기에 사람이 읽을 수 있는 품질 단위가 붙는 건 아님.</p>
+<h2 id="part-3">점수를 높이는 방향으로 언어 모델 업데이트</h2>
+<p><img src="../assets/cme295/05/2025-054.png" alt="Reward와 기준 모델 이탈을 함께 고려하는 RLHF"></p>
+<p>현재 모델이 답변을 생성하고 reward model이 평가.
+그 보상을 높이는 방향으로 답변을 생성하는 policy를 바꿈.
+LLM에서는 지금까지 나온 토큰들이 상태, 다음 토큰 선택이 행동으로 볼 수 있음.</p>
+<p>Reward만 무작정 높이면 점수 모델의 허점을 이용할 수 있음.
+예를 들어 긴 답변에 높은 점수를 주는 경향이 있으면, 내용 없이 길이만 늘릴 수 있음.
+그래서 기준 모델과 너무 멀어지지 않도록 KL penalty 등을 함께 둠.</p>
+<p>그럼 KL이 작으면 답변 내용도 안전하게 보존되나?</p>
+<p>분포의 변화를 제한하는 장치이지 내용의 정답이나 안전을 보증하는 장치는 아님.
+보상 기준과 결과 평가도 따로 필요.</p>
+<h2 id="part-4">PPO에서 한 번에 너무 크게 바꾸지 않기</h2>
+<p><img src="../assets/cme295/05/2025-066.png" alt="PPO clipping"></p>
+<p>PPO는 이전 policy와 새 policy가 같은 행동에 주는 확률 비율을 사용.
+그 비율과 advantage를 이용해 업데이트.
+Advantage는 단순 reward 자체보다 ‘기대보다 얼마나 나았는지’에 가까운 값.</p>
+<p>이전 확률 0.2, 새 확률 0.3이면 비율은 1.5.
+Clipping 범위가 <code>[0.8, 1.2]</code>이고 advantage가 양수라면, 이 방향으로 비율을 계속 키워 얻는 이득을 제한.</p>
+<p>Clipping은 모든 확률을 강제로 그 구간 안에 묶는 명령은 아님.
+목적함수에서 과한 변경에 대한 유인을 제한하는 방식.
+RLHF에서 쓰는 reference model과 PPO의 이전 policy도 역할이 서로 다름.</p>
+<h2 id="part-5">학습 없이 여러 후보 중 고르는 방법</h2>
+<p><img src="../assets/cme295/05/2025-092.png" alt="Best-of-N 방식"></p>
+<p>Best-of-N은 N개 답변을 생성하고 점수가 가장 높은 것을 고름.
+이 단계 자체는 모델 가중치를 업데이트하지 않음.</p>
+<p>후보 점수가 <code>[0.3, 0.8, 0.5]</code>면 두 번째 답변을 선택.
+생성 비용이 늘지만 별도의 강화학습 없이 선호 기준을 적용할 수 있음.
+점수 모델이 틀리면 후보를 많이 뽑아도 잘못된 선택을 더 적극적으로 할 수 있음.</p>
+<h2 id="part-6">DPO는 비교 데이터를 바로 loss에 넣음</h2>
+<p><img src="../assets/cme295/05/2025-101.png" alt="DPO의 preference loss"></p>
+<p>DPO는 chosen과 rejected의 log 확률 차이를 사용해 모델을 직접 학습.
+기준 모델에 비해 chosen 쪽을 얼마나 더 선호하게 되었는지를 비교.</p>
+<pre><code class="language-text">차이 = [log π(chosen) - log π_ref(chosen)]
+     - [log π(rejected) - log π_ref(rejected)]
+
+loss = -log sigmoid(beta × 차이)
+</code></pre>
+<p>응답의 log 확률은 보통 토큰별 조건부 log 확률을 합쳐 계산.
+위 비교에 쓸 별도 reward model을 먼저 학습하지 않아도 된다는 점이 편리.</p>
+<p>그럼 DPO는 RLHF보다 항상 좋은가?</p>
+<p>학습 구성이 단순해지는 장점은 있지만 데이터와 작업에 따라 결과가 달라짐.
+주어진 preference pair로 학습하는 것과, 현재 policy가 만든 응답을 다시 평가하며 탐색하는 것도 다름.
+편리함과 최종 성능을 같은 말로 묶지 않기.</p>
+<h2 id="part-7">참고자료</h2>
+<ul>
+<li><a href="https://cme295.stanford.edu/">Stanford CME 295</a></li>
+</ul>
+<footer><a href="../index.html">전체 목차로 돌아가기</a></footer></article></body></html>

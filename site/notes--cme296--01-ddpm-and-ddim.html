@@ -1,0 +1,87 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>1단원 노이즈에서 이미지를 만드는 과정</title><style>*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f5f5f3;color:#24292f;font:16px/1.85 'Malgun Gothic',sans-serif}article{max-width:960px;margin:32px auto;padding:42px 52px;background:white;border:1px solid #dce1e5;border-radius:8px;overflow-wrap:anywhere}h1{font-size:29px;line-height:1.5;letter-spacing:-.8px}h2{font-size:23px;margin-top:52px;padding-top:20px;border-top:1px solid #d8dee4;scroll-margin-top:22px}h3{font-size:20px;margin-top:30px}p{margin:16px 0}a{color:#15569a;text-underline-offset:3px}img{display:block;max-width:100%;height:auto;border:1px solid #ddd;margin-top:24px}code{font:14px/1.7 Consolas,'Malgun Gothic',monospace;background:#f0f2f4;padding:2px 4px;border-radius:4px}pre{padding:18px;background:#f4f6f8;border-radius:6px;overflow-x:auto;overflow-wrap:normal}pre code{padding:0;background:none}table{border-collapse:collapse;width:100%;font-size:15px}td,th{border:1px solid #d5dae0;padding:9px 12px;text-align:left}th{background:#f4f6f8}.table-wrap{overflow-x:auto;margin:20px 0}li{margin:6px 0}.equation{font:22px/1.6 Cambria,serif;text-align:center;padding:22px;background:#f4f6f8;overflow-x:auto}details{background:#f4f6f8;padding:10px 18px;border-radius:6px;margin:22px 0}summary{cursor:pointer}nav a{display:block;padding:3px 0;text-decoration:none}.top{font-size:13px;color:#63717b}.top a{margin-right:14px}footer{margin-top:50px;padding-top:16px;border-top:1px solid #ddd;font-size:14px}@media(max-width:700px){article{margin:0;padding:24px 18px;border:0;border-radius:0}body{font-size:15px}h1{font-size:25px}h2{font-size:21px}td,th{padding:7px}table{font-size:13px}.equation{font-size:18px;padding:14px}}</style></head><body><article><div class="top"><a href="../index.html">전체 목차</a>CME 296</div><details><summary>이 노트의 목차</summary><nav><a href="#part-1">이미지를 조금씩 흐트러뜨리기</a><a href="#part-2">중간 상태를 한 번에 만들 수 있음</a><a href="#part-3">왜 원본 대신 노이즈를 맞히나</a><a href="#part-4">학습 한 번의 흐름</a><a href="#part-5">생성할 때는 노이즈에서 시작</a><a href="#part-6">DDIM은 생성 경로를 다르게 잡음</a><a href="#part-7">참고자료</a></nav></details><h1>1단원 노이즈에서 이미지를 만드는 과정</h1>
+<p>Diffusion은 깨끗한 이미지에 노이즈를 넣는 과정부터 시작.
+그 반대 방향을 모델이 배우면, 노이즈에서 출발해 이미지를 생성할 수 있음.</p>
+<h2 id="part-1">이미지를 조금씩 흐트러뜨리기</h2>
+<p><img src="../assets/cme296/01/2026-037.png" alt="Diffusion의 forward와 reverse"></p>
+<p>Forward에서는 원본 x₀에 작은 노이즈를 반복해서 추가.
+충분히 진행하면 원본의 모양이 거의 사라지고 Gaussian noise에 가까워짐.
+Reverse에서는 노이즈가 많은 상태에서 적은 상태로 가는 변환을 학습.</p>
+<p><img src="../assets/cme296/01/2026-046.png" alt="이미지와 노이즈의 벡터 표현"></p>
+<p>이미지는 숫자의 배열. RGB 32×32 이미지라면 숫자 <code>32×32×3 = 3,072</code>개.
+Gaussian noise도 같은 모양의 배열이고 각 위치의 값을 정규분포에서 뽑음.
+화면에서 지저분하게 보이는 것과 수식에서 확률변수인 것이 같은 대상.</p>
+<h2 id="part-2">중간 상태를 한 번에 만들 수 있음</h2>
+<p><img src="../assets/cme296/01/2026-050.png" alt="Forward process의 수식"></p>
+<pre><code class="language-text">α_t = 1 - β_t
+ᾱ_t = α₁ × α₂ × ... × α_t
+x_t = √ᾱ_t × x₀ + √(1-ᾱ_t) × ε
+ε ~ N(0, I)
+</code></pre>
+<p>β_t는 각 단계에서 추가하는 노이즈의 양.
+ᾱ_t는 그 단계까지 원본 신호가 얼마나 남는지와 관련된 누적 값.</p>
+<p>숫자 하나만 놓고 계산해보기.
+<code>x₀=0.8</code>, <code>ᾱ_t=0.64</code>, 뽑힌 노이즈 <code>ε=-0.5</code>라고 가정.</p>
+<pre><code class="language-text">x_t = 0.8 × 0.8 + 0.6 × (-0.5)
+    = 0.34
+</code></pre>
+<p>그럼 t=500의 학습 입력을 만들려면 500번 노이즈를 더해야 하나?</p>
+<p>위 식으로 바로 만들 수 있음.
+학습할 때 원본 이미지, t, ε를 뽑아서 해당 시점의 입력을 한 번에 구성.</p>
+<h2 id="part-3">왜 원본 대신 노이즈를 맞히나</h2>
+<p><img src="../assets/cme296/01/2026-071.png" alt="ELBO를 이용한 학습 목표"></p>
+<p>생성 모델의 목표는 실제 데이터에 높은 확률을 주는 것.
+그런데 모든 중간 상태를 고려한 log likelihood를 직접 계산하기 어려움.
+계산 가능한 하한인 ELBO를 이용해서 학습 목표를 유도.</p>
+<p>하한이므로 높이는 방향은 유용하지만, 하한과 원래 값이 항상 같지는 않음.
+이 유도에서 Gaussian 분포 사이의 KL 항들을 정리하면 denoising과 연결됨.</p>
+<p><img src="../assets/cme296/01/2026-081.png" alt="DDPM의 noise prediction loss"></p>
+<p>DDPM에서 많이 쓰는 단순화된 목표는 다음과 같음.</p>
+<pre><code class="language-text">loss = E[ ||ε - ε_θ(x_t, t)||² ]
+</code></pre>
+<p>ε는 내가 입력을 만들 때 넣은 노이즈라 정답을 알고 있음.
+모델은 x_t와 시간 t를 보고 그 ε를 예측.
+같은 x_t처럼 보여도 노이즈 수준이 다르면 복원 방향이 달라질 수 있어 t도 전달.</p>
+<h2 id="part-4">학습 한 번의 흐름</h2>
+<p><img src="../assets/cme296/01/2026-085.png" alt="DDPM training recipe"></p>
+<pre><code class="language-text">이미지 하나 선택
+→ 시간 t 선택
+→ 노이즈 ε 선택
+→ x_t 계산
+→ 모델이 ε 예측
+→ 실제 ε와 차이로 업데이트
+</code></pre>
+<p>앞의 예제에서 실제 ε=-0.5인데 모델이 -0.4로 예측했다면 제곱 오차는 0.01.
+이런 학습을 여러 이미지와 노이즈 수준에서 반복.</p>
+<p>노이즈를 정확히 알면 원본도 알 수 있나?</p>
+<p>이 예제에서는 식을 정리하면 됨.</p>
+<pre><code class="language-text">x₀ = (x_t - √(1-ᾱ_t) × ε) / √ᾱ_t
+   = (0.34 - 0.6 × (-0.5)) / 0.8
+   = 0.8
+</code></pre>
+<p>실제 모델은 ε를 추정하므로 오차가 있음.
+정보가 거의 사라진 입력에서 특정 원본을 항상 정확히 되찾는 문제는 아님.</p>
+<h2 id="part-5">생성할 때는 노이즈에서 시작</h2>
+<p><img src="../assets/cme296/01/2026-094.png" alt="DDPM inference recipe"></p>
+<p>학습 데이터의 원본을 넣는 대신 새로운 Gaussian noise x_T를 뽑음.
+모델의 예측으로 x_T → x_{T-1} → ... → x₀ 순서로 이동.
+DDPM sampler에서는 중간 단계에 추가 무작위성도 들어감.
+마지막 단계의 노이즈 처리는 따로 두는 구성이 일반적.</p>
+<p>학습은 임의의 t 하나를 골라 진행할 수 있지만, 생성은 여러 시점을 따라 이동.
+둘의 계산 흐름을 구분해두기.</p>
+<h2 id="part-6">DDIM은 생성 경로를 다르게 잡음</h2>
+<p><img src="../assets/cme296/01/2026-108.png" alt="DDIM의 deterministic formulation"></p>
+<p>DDIM은 DDPM의 학습 목표와 연결되는 다른 sampling 경로를 구성.
+η=0인 설정에서는 단계 사이에 새 노이즈를 추가하지 않아, 초기 노이즈가 같으면 경로가 결정됨.</p>
+<p>그럼 매번 같은 이미지만 생성하나?</p>
+<p>초기 노이즈를 다르게 뽑으면 다른 결과가 나올 수 있음.
+Deterministic은 초기 상태를 고정했을 때의 이야기.</p>
+<p><img src="../assets/cme296/01/2026-116.png" alt="DDIM의 step skipping"></p>
+<p>일부 시점만 선택해서 이동할 수도 있음.
+기존 DDPM 반복문에서 임의로 몇 줄을 건너뛰는 것과는 다름.
+선택한 시점 간격에 맞는 update 식을 사용해야 함.
+단계를 줄이면 속도는 좋아지지만 품질도 함께 확인.</p>
+<h2 id="part-7">참고자료</h2>
+<ul>
+<li><a href="https://cme296.stanford.edu/">Stanford CME 296</a></li>
+</ul>
+<footer><a href="../index.html">전체 목차로 돌아가기</a></footer></article></body></html>
